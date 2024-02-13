@@ -1,16 +1,25 @@
 #include <ituGL/core/DeviceGL.h>
 #include <ituGL/application/Window.h>
+
+#include <ituGL/geometry/VertexArrayObject.h>
+#include <ituGL/geometry/VertexBufferObject.h>
+#include <ituGL/geometry/ElementBufferObject.h>
+#include <ituGL/geometry/VertexAttribute.h>
+
 #include <iostream>
+#include <span>
+#include <vector>
+#include <numbers>
 
 int buildShaderProgram();
-void processInput(GLFWwindow* window);
+
+void processInput(GLFWwindow *window);
 
 // settings
 const unsigned int SCR_WIDTH = 800;
-const unsigned int SCR_HEIGHT = 600;
+const unsigned int SCR_HEIGHT = 800;
 
-int main()
-{
+int main() {
     // glfw: initialize and configure
     // ------------------------------
     DeviceGL deviceGL;
@@ -18,8 +27,7 @@ int main()
     // glfw window creation
     // --------------------
     Window window(SCR_WIDTH, SCR_HEIGHT, "LearnOpenGL");
-    if (!window.IsValid())
-    {
+    if (!window.IsValid()) {
         std::cout << "Failed to create GLFW window" << std::endl;
         return -1;
     }
@@ -27,8 +35,7 @@ int main()
     // glad: load all OpenGL function pointers
     // ---------------------------------------
     deviceGL.SetCurrentWindow(window);
-    if (!deviceGL.IsReady())
-    {
+    if (!deviceGL.IsReady()) {
         std::cout << "Failed to initialize GLAD" << std::endl;
         return -1;
     }
@@ -39,95 +46,132 @@ int main()
 
     // set up vertex data (and buffer(s)) and configure vertex attributes
     // ------------------------------------------------------------------
-    float vertices[] = {
-        -0.5f, -0.5f, 0.0f, // left  
-         0.5f, -0.5f, 0.0f, // right 
-         0.0f,  0.5f, 0.0f  // top   
-    };
+    auto pi = (float) std::numbers::pi;
+    auto precision = 80;
+    auto angleRotation = 2 * pi / (float) precision;
+    auto radius = 0.7071f;
 
-    unsigned int VBO, VAO;
-    glGenVertexArrays(1, &VAO);
-    glGenBuffers(1, &VBO);
+    auto vertices = std::vector<float>();
+    auto indexes = std::vector<int>();
+
+    // Origin
+    vertices.push_back(0.0f);
+    vertices.push_back(0.0f);
+    vertices.push_back(0.0f);
+
+    // First point
+    vertices.push_back(radius);
+    vertices.push_back(0.0f);
+    vertices.push_back(0.0f);
+
+    for (int i = 1; i < precision; i++) {
+
+        float x = radius * cos(angleRotation * (float) i);
+        float y = radius * sin(angleRotation * (float) i);
+
+        float z = 0.0f;
+
+        vertices.push_back(x);
+        vertices.push_back(y);
+        vertices.push_back(z);
+
+        indexes.push_back(0);
+        indexes.push_back(i);
+        indexes.push_back(i + 1);
+    }
+
+    indexes.push_back(0);
+    indexes.push_back(precision);
+    indexes.push_back(1);
+
+    auto vertexesNumber =vertices.size();
+    auto indexesNumber = indexes.size();
+
+    std::span verticesSpan(vertices.data(), vertexesNumber);
+    std::span indexesSpan {indexes.data(), indexesNumber};
+
+    float time = 0.0f;
+
+    VertexBufferObject vbo;
+    VertexArrayObject vao;
+    ElementBufferObject ebo;
+
     // bind the Vertex Array Object first, then bind and set vertex buffer(s), and then configure vertex attributes(s).
-    glBindVertexArray(VAO);
+    vao.Bind();
 
-    glBindBuffer(GL_ARRAY_BUFFER, VBO);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+    vbo.Bind();
+    vbo.AllocateData(verticesSpan, BufferObject::StaticDraw);
 
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
-    glEnableVertexAttribArray(0);
+    ebo.Bind();
+    ebo.AllocateData(indexesSpan, BufferObject::StaticDraw);
+
+    vao.SetAttribute(0, VertexAttribute(Data::Type::Float, 3), 0, 3 * sizeof(float));
 
     // note that this is allowed, the call to glVertexAttribPointer registered VBO as the vertex attribute's bound vertex buffer object so afterwards we can safely unbind
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    VertexBufferObject::Unbind();
 
     // You can unbind the VAO afterwards so other VAO calls won't accidentally modify this VAO, but this rarely happens. Modifying other
     // VAOs requires a call to glBindVertexArray anyways so we generally don't unbind VAOs (nor VBOs) when it's not directly necessary.
-    glBindVertexArray(0);
-
+    VertexArrayObject::Unbind();
+    ElementBufferObject::Unbind();
 
     // uncomment this call to draw in wireframe polygons.
     //glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 
     // render loop
     // -----------
-    while (!window.ShouldClose())
-    {
+    while (!window.ShouldClose()) {
         // input
         // -----
         processInput(window.GetInternalWindow());
 
         // render
         // ------
-        deviceGL.Clear(0.2f, 0.3f, 0.3f, 1.0f);
+        deviceGL.Clear(0.8f, 0.3f, 0.2f, 1.0f);
+
+        vbo.Bind();
+        vbo.UpdateData(verticesSpan);
 
         // draw our first triangle
         glUseProgram(shaderProgram);
-        glBindVertexArray(VAO); // seeing as we only have a single VAO there's no need to bind it every time, but we'll do so to keep things a bit more organized
-        glDrawArrays(GL_TRIANGLES, 0, 3);
+        vao.Bind();
+        glDrawElements(GL_TRIANGLES, (GLsizei) indexesNumber, GL_UNSIGNED_INT, nullptr);
         // glBindVertexArray(0); // no need to unbind it every time 
 
         // glfw: swap buffers and poll IO events (keys pressed/released, mouse moved etc.)
         // -------------------------------------------------------------------------------
         window.SwapBuffers();
         deviceGL.PollEvents();
-    }
 
-    // optional: de-allocate all resources once they've outlived their purpose:
-    // ------------------------------------------------------------------------
-    glDeleteVertexArrays(1, &VAO);
-    glDeleteBuffers(1, &VBO);
+        time += 0.01f;
+    }
     glDeleteProgram(shaderProgram);
 
-    // glfw: terminate, clearing all previously allocated GLFW resources.
-    // ------------------------------------------------------------------
-    // This is now done in the destructor of DeviceGL
     return 0;
 }
 
 // process all input: query GLFW whether relevant keys are pressed/released this frame and react accordingly
 // ---------------------------------------------------------------------------------------------------------
-void processInput(GLFWwindow* window)
-{
+void processInput(GLFWwindow *window) {
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
         glfwSetWindowShouldClose(window, true);
 }
 
 // build the shader program
 // ------------------------
-int buildShaderProgram() 
-{
-    const char* vertexShaderSource = "#version 330 core\n"
-        "layout (location = 0) in vec3 aPos;\n"
-        "void main()\n"
-        "{\n"
-        "   gl_Position = vec4(aPos.x, aPos.y, aPos.z, 1.0);\n"
-        "}\0";
-    const char* fragmentShaderSource = "#version 330 core\n"
-        "out vec4 FragColor;\n"
-        "void main()\n"
-        "{\n"
-        "   FragColor = vec4(1.0f, 0.5f, 0.2f, 1.0f);\n"
-        "}\n\0";
+int buildShaderProgram() {
+    const char *vertexShaderSource = "#version 330 core\n"
+                                     "layout (location = 0) in vec3 aPos;\n"
+                                     "void main()\n"
+                                     "{\n"
+                                     "   gl_Position = vec4(aPos.x, aPos.y, aPos.z, 1.0);\n"
+                                     "}\0";
+    const char *fragmentShaderSource = "#version 330 core\n"
+                                       "out vec4 FragColor;\n"
+                                       "void main()\n"
+                                       "{\n"
+                                       "   FragColor = vec4(0f, 0.5f, 0.7f, 1.0f);\n"
+                                       "}\n\0";
 
     // vertex shader
     unsigned int vertexShader = glCreateShader(GL_VERTEX_SHADER);
@@ -137,8 +181,7 @@ int buildShaderProgram()
     int success;
     char infoLog[512];
     glGetShaderiv(vertexShader, GL_COMPILE_STATUS, &success);
-    if (!success)
-    {
+    if (!success) {
         glGetShaderInfoLog(vertexShader, 512, NULL, infoLog);
         std::cout << "ERROR::SHADER::VERTEX::COMPILATION_FAILED\n" << infoLog << std::endl;
     }
@@ -148,8 +191,7 @@ int buildShaderProgram()
     glCompileShader(fragmentShader);
     // check for shader compile errors
     glGetShaderiv(fragmentShader, GL_COMPILE_STATUS, &success);
-    if (!success)
-    {
+    if (!success) {
         glGetShaderInfoLog(fragmentShader, 512, NULL, infoLog);
         std::cout << "ERROR::SHADER::FRAGMENT::COMPILATION_FAILED\n" << infoLog << std::endl;
     }
